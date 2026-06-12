@@ -14,6 +14,14 @@ func analyzeVersion(meta *model.PackageMetadata, currentVersion string) model.Si
 		Weight: signalWeights["version"],
 	}
 
+	if meta.NotFound {
+		result.Score = 100
+		result.Level = "critical"
+		result.Verdict = "Package not found in registry — no version history available"
+		result.Details = map[string]any{"notFound": true}
+		return result
+	}
+
 	versionCount := meta.VersionCount
 	if versionCount == 0 && len(meta.Versions) > 0 {
 		versionCount = len(meta.Versions)

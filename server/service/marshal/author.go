@@ -11,6 +11,14 @@ func analyzeAuthor(meta *model.PackageMetadata) model.SignalResult {
 		Weight: signalWeights["author"],
 	}
 
+	if meta.NotFound {
+		result.Score = 100
+		result.Level = "critical"
+		result.Verdict = "Package not found in registry — cannot verify maintainers"
+		result.Details = map[string]any{"notFound": true, "maintainerCount": 0}
+		return result
+	}
+
 	maintainerCount := len(meta.Maintainers)
 
 	if maintainerCount == 0 {

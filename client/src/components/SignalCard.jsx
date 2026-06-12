@@ -5,6 +5,7 @@ const SIGNAL_ICONS = {
   readme: '📖',
   version: '🏷️',
   typosquat: '🎯',
+  malware: '🦠',
 };
 
 export default function SignalCard({ signal }) {

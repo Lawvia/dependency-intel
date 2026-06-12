@@ -66,6 +66,16 @@ func (r *NpmRegistry) GetMetadata(ctx context.Context, name string) (*model.Pack
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		// Package not found (deleted/unpublished) — return metadata with NotFound flag
+		if resp.StatusCode == http.StatusNotFound {
+			notFoundMeta := &model.PackageMetadata{
+				Name:      name,
+				Ecosystem: "npm",
+				NotFound:  true,
+			}
+			r.cache.Set(cacheKey, notFoundMeta, 15*time.Minute)
+			return notFoundMeta, nil
+		}
 		return nil, fmt.Errorf("npm registry returned %d: %s", resp.StatusCode, string(body))
 	}
 

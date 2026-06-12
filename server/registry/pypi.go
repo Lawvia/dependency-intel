@@ -65,6 +65,15 @@ func (r *PyPIRegistry) GetMetadata(ctx context.Context, name string) (*model.Pac
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusNotFound {
+			notFoundMeta := &model.PackageMetadata{
+				Name:      name,
+				Ecosystem: "PyPI",
+				NotFound:  true,
+			}
+			r.cache.Set(cacheKey, notFoundMeta, 15*time.Minute)
+			return notFoundMeta, nil
+		}
 		return nil, fmt.Errorf("PyPI returned %d: %s", resp.StatusCode, string(body))
 	}
 

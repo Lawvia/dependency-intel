@@ -87,6 +87,39 @@ type osvRef struct {
 	URL  string `json:"url"`
 }
 
+// GetVulnDetails fetches full details for a given vulnerability ID.
+func (c *OSVClient) GetVulnDetails(ctx context.Context, id string) (*model.Vulnerability, error) {
+	cacheKey := "osv:vuln:" + id
+	if cached, ok := c.cache.Get(cacheKey); ok {
+		return cached.(*model.Vulnerability), nil
+	}
+
+	reqURL := fmt.Sprintf("%s/v1/vulns/%s", c.baseURL, id)
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("OSV returned status %d", resp.StatusCode)
+	}
+
+	var vulnDetail osvVuln
+	if err := json.NewDecoder(resp.Body).Decode(&vulnDetail); err != nil {
+		return nil, err
+	}
+
+	vuln := convertOSVVuln(vulnDetail)
+	c.cache.Set(cacheKey, &vuln, cacheTTLVuln)
+	return &vuln, nil
+}
+
 // QueryBatch queries OSV for vulnerabilities across multiple packages.
 func (c *OSVClient) QueryBatch(ctx context.Context, packages []model.ParsedPackage) (map[string][]model.Vulnerability, error) {
 	results := make(map[string][]model.Vulnerability)
@@ -105,6 +138,9 @@ func (c *OSVClient) QueryBatch(ctx context.Context, packages []model.ParsedPacka
 
 	// OSV supports up to 1000 per batch
 	const batchSize = 1000
+	var batchResults []osvBatchResult
+	var batchPackages []model.ParsedPackage
+
 	for i := 0; i < len(queries); i += batchSize {
 		end := i + batchSize
 		if end > len(queries) {
@@ -119,13 +155,66 @@ func (c *OSVClient) QueryBatch(ctx context.Context, packages []model.ParsedPacka
 			return nil, fmt.Errorf("OSV batch query failed: %w", err)
 		}
 
-		for j, result := range resp.Results {
-			if j >= len(batchPkgs) {
+		batchResults = append(batchResults, resp.Results...)
+		batchPackages = append(batchPackages, batchPkgs...)
+	}
+
+	// Collect all unique vuln IDs to fetch details concurrently
+	uniqueVulnIDs := make(map[string]bool)
+	for _, result := range batchResults {
+		for _, v := range result.Vulns {
+			if v.ID != "" {
+				uniqueVulnIDs[v.ID] = true
+			}
+		}
+	}
+
+	if len(uniqueVulnIDs) > 0 {
+		type vulnDetailResult struct {
+			id   string
+			vuln *model.Vulnerability
+			err  error
+		}
+
+		ch := make(chan vulnDetailResult, len(uniqueVulnIDs))
+		for id := range uniqueVulnIDs {
+			go func(vulnID string) {
+				detail, err := c.GetVulnDetails(ctx, vulnID)
+				ch <- vulnDetailResult{id: vulnID, vuln: detail, err: err}
+			}(id)
+		}
+
+		// Wait and collect details
+		vulnDetails := make(map[string]model.Vulnerability)
+		for i := 0; i < len(uniqueVulnIDs); i++ {
+			res := <-ch
+			if res.err == nil && res.vuln != nil {
+				vulnDetails[res.id] = *res.vuln
+			} else {
+				vulnDetails[res.id] = model.Vulnerability{
+					ID:       res.id,
+					Severity: "UNKNOWN",
+					Source:   "osv",
+				}
+			}
+		}
+
+		// Map results to packages with details
+		for j, result := range batchResults {
+			if j >= len(batchPackages) {
 				break
 			}
-			key := batchPkgs[j].Ecosystem + "/" + batchPkgs[j].Name
+			key := batchPackages[j].Ecosystem + "/" + batchPackages[j].Name
 			for _, vuln := range result.Vulns {
-				results[key] = append(results[key], convertOSVVuln(vuln))
+				if detail, ok := vulnDetails[vuln.ID]; ok {
+					results[key] = append(results[key], detail)
+				} else {
+					results[key] = append(results[key], model.Vulnerability{
+						ID:       vuln.ID,
+						Severity: "UNKNOWN",
+						Source:   "osv",
+					})
+				}
 			}
 		}
 	}

@@ -13,10 +13,18 @@ func analyzeAge(meta *model.PackageMetadata) model.SignalResult {
 		Weight: signalWeights["age"],
 	}
 
+	if meta.NotFound {
+		result.Score = 100
+		result.Level = "critical"
+		result.Verdict = "Package not found in registry — deleted or unpublished (highly suspicious)"
+		result.Details = map[string]any{"notFound": true}
+		return result
+	}
+
 	if meta.CreatedAt == "" {
-		result.Score = 50
-		result.Level = "medium"
-		result.Verdict = "Unable to determine package age"
+		result.Score = 70
+		result.Level = "high"
+		result.Verdict = "Unable to determine package age — metadata unavailable"
 		result.Details = map[string]any{"createdAt": nil}
 		return result
 	}

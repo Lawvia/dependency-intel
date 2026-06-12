@@ -99,6 +99,12 @@ func (h *ScanHandler) ScanManifest(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 
+	// Apply malware amplification: if OSM flags a package as malicious,
+	// the Marshal score must reflect critical risk regardless of heuristic signals
+	for i := range results {
+		applyMalwareAmplification(&results[i])
+	}
+
 	// Build summary
 	summary := buildSummary(results)
 
@@ -164,6 +170,9 @@ func (h *ScanHandler) ScanPackage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Apply malware amplification
+	applyMalwareAmplification(&result)
+
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -186,6 +195,41 @@ func buildSummary(results []model.ScanResult) model.ScanSummary {
 	}
 
 	return summary
+}
+
+// applyMalwareAmplification boosts the Marshal composite score when OSM flags malware.
+// A malware-flagged package should NEVER show as "medium" or "safe".
+func applyMalwareAmplification(result *model.ScanResult) {
+	if result.MalwareResult == nil || !result.MalwareResult.IsMalicious {
+		return
+	}
+	if result.MarshalScore == nil {
+		return
+	}
+
+	// Minimum score for malware-flagged packages
+	const malwareMinScore = 90
+
+	if result.MarshalScore.CompositeScore < malwareMinScore {
+		result.MarshalScore.CompositeScore = malwareMinScore
+		result.MarshalScore.RiskLevel = "critical"
+
+		// Add a malware signal to explain the boost
+		malwareSignal := model.SignalResult{
+			Name:    "malware",
+			Score:   100,
+			Weight:  1.0,
+			Level:   "critical",
+			Verdict: "Package flagged as malicious by OpenSourceMalware — score amplified to critical",
+			Details: map[string]any{
+				"source":        "osm",
+				"severityLevel": result.MalwareResult.SeverityLevel,
+				"description":   result.MalwareResult.Description,
+				"tags":          result.MalwareResult.Tags,
+			},
+		}
+		result.MarshalScore.Signals = append(result.MarshalScore.Signals, malwareSignal)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

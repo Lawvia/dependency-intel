@@ -112,6 +112,8 @@ export default function PackageTable({ results, onSelectPackage }) {
                   <td>
                     {isMalware ? (
                       <span className="badge badge-malware">🔴 MALWARE</span>
+                    ) : r.malwareResult?.hasMaliciousVersions ? (
+                      <span className="badge" style={{ background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', fontSize: '0.75rem', fontWeight: 600 }}>⚠️ RISK</span>
                     ) : (
                       <span style={{ color: 'var(--text-muted)' }}>—</span>
                     )}

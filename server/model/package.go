@@ -58,14 +58,16 @@ type Vulnerability struct {
 
 // MalwareResult represents the OSM malware check result.
 type MalwareResult struct {
-	IsMalicious   bool     `json:"isMalicious"`
-	ThreatCount   int      `json:"threatCount"`
-	SeverityLevel string   `json:"severityLevel,omitempty"`
-	Description   string   `json:"description,omitempty"`
-	Tags          []string `json:"tags,omitempty"`
-	Status        string   `json:"status,omitempty"`
-	FirstSeen     string   `json:"firstSeen,omitempty"`
-	LastSeen      string   `json:"lastSeen,omitempty"`
+	IsMalicious            bool     `json:"isMalicious"`
+	ThreatCount            int      `json:"threatCount"`
+	SeverityLevel          string   `json:"severityLevel,omitempty"`
+	Description            string   `json:"description,omitempty"`
+	Tags                   []string `json:"tags,omitempty"`
+	Status                 string   `json:"status,omitempty"`
+	FirstSeen              string   `json:"firstSeen,omitempty"`
+	LastSeen               string   `json:"lastSeen,omitempty"`
+	HasMaliciousVersions   bool     `json:"hasMaliciousVersions"`
+	KnownMaliciousVersions []string `json:"knownMaliciousVersions,omitempty"`
 }
 
 // PackageMetadata holds enriched metadata from registry APIs.
@@ -85,6 +87,7 @@ type PackageMetadata struct {
 	Downloads      *DownloadStats    `json:"downloads,omitempty"`
 	ReadmeLength   int               `json:"readmeLength"`
 	HasReadme      bool              `json:"hasReadme"`
+	NotFound       bool              `json:"notFound"` // true if the package doesn't exist in the registry (deleted/unpublished)
 }
 
 // Maintainer represents a package maintainer.

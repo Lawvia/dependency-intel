@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/lawvia/depintel/model"
 	"github.com/lawvia/depintel/util"
@@ -31,12 +32,14 @@ func NewOSMClient(httpClient *http.Client, cache *util.Cache, apiKey string) *OS
 }
 
 type osmResponse struct {
-	Malicious          bool       `json:"malicious"`
-	ReportType         string     `json:"report_type"`
-	ResourceIdentifier string     `json:"resource_identifier"`
-	Ecosystem          string     `json:"ecosystem"`
-	ThreatCount        int        `json:"threat_count"`
-	Details            *osmDetail `json:"details,omitempty"`
+	Malicious              bool       `json:"malicious"`
+	ReportType             string     `json:"report_type"`
+	ResourceIdentifier     string     `json:"resource_identifier"`
+	Ecosystem              string     `json:"ecosystem"`
+	ThreatCount            int        `json:"threat_count"`
+	Warning                string     `json:"warning,omitempty"`
+	KnownMaliciousVersions []string   `json:"known_malicious_versions,omitempty"`
+	Details                *osmDetail `json:"details,omitempty"`
 }
 
 type osmDetail struct {
@@ -47,6 +50,7 @@ type osmDetail struct {
 	Tags          []string `json:"tags"`
 	FirstSeen     string   `json:"first_seen"`
 	LastSeen      string   `json:"last_seen"`
+	VersionInfo   string   `json:"version_info,omitempty"`
 }
 
 // CheckMalicious checks if a package is flagged as malicious in the OSM database.
@@ -57,6 +61,9 @@ func (c *OSMClient) CheckMalicious(ctx context.Context, pkg model.ParsedPackage)
 	}
 
 	cacheKey := fmt.Sprintf("osm:%s/%s", pkg.Ecosystem, pkg.Name)
+	if pkg.Version != "" {
+		cacheKey = fmt.Sprintf("osm:%s/%s@%s", pkg.Ecosystem, pkg.Name, pkg.Version)
+	}
 	if cached, ok := c.cache.Get(cacheKey); ok {
 		return cached.(*model.MalwareResult), nil
 	}
@@ -99,9 +106,42 @@ func (c *OSMClient) CheckMalicious(ctx context.Context, pkg model.ParsedPackage)
 		return nil, fmt.Errorf("failed to decode OSM response: %w", err)
 	}
 
+	var versionList []string
+	addVersions := func(verStr string) {
+		parts := strings.Split(verStr, ",")
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				versionList = append(versionList, p)
+			}
+		}
+	}
+
+	isMalicious := osmResp.Malicious
+	hasMaliciousVersions := false
+
+	if osmResp.Malicious {
+		// If no version was provided, check if the threat is version-specific
+		if pkg.Version == "" && osmResp.Details != nil && osmResp.Details.VersionInfo != "" && osmResp.Details.VersionInfo != "all" {
+			isMalicious = false
+			hasMaliciousVersions = true
+			addVersions(osmResp.Details.VersionInfo)
+		}
+	} else {
+		// Not currently flagged as malicious, check if it has a history/warning of malicious versions
+		if osmResp.Warning != "" || len(osmResp.KnownMaliciousVersions) > 0 {
+			hasMaliciousVersions = true
+			for _, verGroup := range osmResp.KnownMaliciousVersions {
+				addVersions(verGroup)
+			}
+		}
+	}
+
 	result := &model.MalwareResult{
-		IsMalicious: osmResp.Malicious,
-		ThreatCount: osmResp.ThreatCount,
+		IsMalicious:            isMalicious,
+		ThreatCount:            osmResp.ThreatCount,
+		HasMaliciousVersions:   hasMaliciousVersions,
+		KnownMaliciousVersions: versionList,
 	}
 
 	if osmResp.Details != nil {
@@ -111,6 +151,8 @@ func (c *OSMClient) CheckMalicious(ctx context.Context, pkg model.ParsedPackage)
 		result.Status = osmResp.Details.Status
 		result.FirstSeen = osmResp.Details.FirstSeen
 		result.LastSeen = osmResp.Details.LastSeen
+	} else if osmResp.Warning != "" {
+		result.Description = osmResp.Warning
 	}
 
 	c.cache.Set(cacheKey, result, cacheTTLOSM)
