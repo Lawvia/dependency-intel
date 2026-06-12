@@ -2,6 +2,12 @@
 
 Scan, analyze, and score the health & security of your open-source dependencies.
 
+<img width="952" height="608" alt="image" src="https://github.com/user-attachments/assets/da9cc033-e78e-4c89-9b67-a9b096e787f3" />
+<img width="904" height="617" alt="image" src="https://github.com/user-attachments/assets/2a69e6ce-d34e-4726-aeef-64c13c9d956c" />
+<img width="1327" height="823" alt="image" src="https://github.com/user-attachments/assets/c33688ab-b50f-448c-a239-444dee9e47a4" />
+<img width="518" height="830" alt="image" src="https://github.com/user-attachments/assets/362dffb3-e0f8-4f9b-9399-5ef0c32a2e42" />
+
+
 **Powered by:**
 - **OSV.dev** — CVE vulnerability database
 - **OpenSourceMalware** — Malware threat intelligence
